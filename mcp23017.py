@@ -1,0 +1,522 @@
+#!/usr/bin/env python3
+
+"""
+Access a MCP23017 “IO Expander” through the i2c wrapper provided by
+rgpio or lgpio.
+
+This is a learning project of mine to understand I2C programming
+better, and an API design exercise. I plan to use this in “production”
+on my model railway, but I will only test it is as far as I use
+it. Your milage may vary. Patches welcome. 
+
+The MCP23017 “GPIO Expander” is interfaced in IOCON.BANK = 0
+mode. This mode allows read and write operations to single byte
+registers to access two banks (A and B) of eight GPIOs each.
+
+### Overview
+
+* The `Expander` class provides connectivity and access to the Expander’s
+  banks of eight GPIOs each, `bank_a` and `bank_b`.
+* The `Bank` class procides access to the bank’s configuration registers
+  through properties (`iodir_is_input`, `pin_polarity_is_reversed`,
+  `interrupt_on_change`, `default_comparison_values`,
+  `interrupt_compare_to_default`, `internal_pull_up_is_active`,
+  `interrupt_flags`, `interrupt_captured`, `gpios`, `output_latches`) and
+  also `read()` and `write()` methods that set and get GPIO bin status
+  as one would expect. A `Bank` acts like an eight-tuple of `Pin`s. The
+  register properties correspond to the acrual registers. The datasheet
+  is quoted extensively below. 
+* The `Pin` class represents a pin on a bank and allows read() and write()
+  as one might expect. The class also provides access to the Pin’s Bank’s
+  configuration registers. All vales will go through the `Register`s on the
+  corresponding `Bank` and will trigger i2c read and/or write operations,
+  if needed. 
+* The `Byte` class subclasses int and provides helper functions to read
+  and manipulate single bits. You will interact with registers on the banks
+  almost exclusively through this class. Everything should be
+  self-explainatory, though.
+• The (`Cached`-, `ReadOnly`-) `Register` classes and the (`ReadOnly`-)
+  `PinConfig` classes implement Python’s property protocol to facilitate
+  access to the device’s configuration and data. It is in the `Register`
+  class that the only calls to i2c IO functions are actually made. There
+  are exactly to lines in this program where this happens, one for reading
+  (in `__get__()`) and one for writing (in `__set__()`). 
+
+The MCP23017 datasheet and documentation is quoted extensively below,
+explaing the configuration registers. For the somewhat complex dependencies
+between the registers governing interrupt operation, I refer you to that
+document. The registers to controll the internal pull-up resistors and
+logical pin reversal are easily understood. In many contexts in which I
+use the device, this saves me resistors and their soldering. Nice! 
+"""
+
+from typing import Tuple
+
+# TABLE 3-5: CONTROL REGISTER SUMMARY (IOCON.BANK = 0)
+# The “B” version of each bank register is the A-number + 1.
+IODIRA   = 0x00
+IPOLA    = 0x02
+GPINTENA = 0x04
+DEFVALA  = 0x06
+INTCONA  = 0x08
+IOCONA   = 0x0A
+GPPUA    = 0x0C
+INTFA    = 0x0E
+INTCAPA  = 0x10
+GPIOA    = 0x12
+OLATA    = 0x14
+        
+
+# A BoolByte 
+type BoolByte = Tuple[bool, bool, bool, bool, bool, bool, bool, bool]
+"8-tuple of bools."
+
+type ByteSpec = bool|int|BoolByte
+"""\
+A byte may be specified as
+* a bool (True -> 0xff, False -> 0x00),
+* an int,
+* or a BoolByte, that is, an 8-tuple of bools."""
+
+type SBC = object
+"""\
+An SBC is a placeholder either for an rgpio.sbc instance or the
+lgpio module or a wrapper thereof.
+"""
+
+class Byte(int):
+    """
+    A byte is an integer that stores a pattern of 8 bits. It may be
+    initialized by a ByteSpec which may be either:
+    * an 8-tuple of bools,
+    * a regular integer
+    * or a bool.
+    A bool will be regarded as eight 1s, for True, or eigth 0s, for False.
+    For all other input values, a TypeError will be raised. 
+
+    A Byte is iterable and will yield eigth boolean values.<br>
+    A Byte has allows indexed access like an 8-tuple of bools.
+
+    The string representation of a Byte is a binary integer literal:
+    repr(b) = str(b) = "0b01010101".
+    """
+    def __new__(cls, b:ByteSpec):
+        if type(b) is tuple:
+            i = 0x00
+            for bit, a in enumerate(b[:8]):
+                if a:
+                    i = i | (0x01 << bit)
+        elif isinstance(b, int): # isinstance() takes inheritance into account.
+            i = b & 0xff
+        elif type(b) is bool:
+            if b:
+                i = 0xff
+            else:
+                i = 0x00
+        else:
+            raise TypeError("Can’t construct Byte from " + repr(b))
+                
+        return super().__new__(cls, i)
+    
+    def __iter__(self):
+        """
+        Yield the bit-pattern as eight bools.
+        """
+        if hasattr(self, "_tuple"):
+            yield from iter(self._tuple)
+        else:
+            for a in range(8):
+                yield bool(self & (0x1 << a))
+
+    def __getitem__(self, idx) -> bool:
+        """
+        Access the bits as if this were an eight-tuple of bools. 
+        """
+        if not hasattr(self, "_tuple"):
+            self._tuple = tuple(self)
+        return self._tuple[idx]
+
+    def __repr__(self) -> str:
+        """
+        A Byte is represented as a Python binary literal with leading 0s. 
+        """
+        return "0b" + "{:08b}".format(self)
+
+    def set_bit_to(self, bit:int, value:bool):
+        """
+        Return a copy of self with the specified `bit` set to `value`. 
+        """
+        mask = 0x01 << bit
+        if value:
+            new = self | mask
+        else:
+            rmask = 0xff - mask
+            new = self & rmask
+            
+        return Byte(new)
+
+    def set_bit(self, bit:int):
+        """
+        Return a copy of self with the specified `bit` set.
+        """
+        return self.set_bit_to(bit, True)
+        
+    def delete_bit(self, bit:int):
+        """
+        Return a copy of self with the specified `bit` deleted.
+        """
+        return self.set_bit_to(bit, False)
+
+    def get_bit(self, bit:int) -> bool:
+        """
+        Get the state of a single bit.
+        """
+        return bool(self & (0x01 << bit))
+        
+class Expander(object):
+    """
+    A MCP23017 in IOCON.BANK = 0 mode. This mode allows read and write
+    operations to single byte registers to access two banks (A and B)
+    of eight GPIOs each. 
+    """    
+    def __init__(self, sbc:SBC, i2c_bus:int, address:int):
+        """
+        Args:
+            sbc: Either the lgpio module, a rgpio.sbc instance or a
+                wrapper thereof.
+            i2c_bus: Bus number
+            address: The device’s address on that bus. 
+        """
+        self._sbc = sbc
+        self._handle = sbc.i2c_open(i2c_bus, address)
+        
+        self.bank_a = Bank(self, 0)
+        self.bank_b = Bank(self, 1)
+        
+    def __del__(self):
+        self._sbc.i2c_close(self._handle)
+
+    def write_byte_data(self, register:int, value:int):
+        self.sbc.i2c_write_byte_data(self._handle, register, value)
+
+    def read_byte_data(self, register:int) -> int:
+        return self.sbc.i2c_read_byte_data(self._handle, register)
+
+class BankBase(object):
+    """
+    Base for the Bank class below to be used in type hinting.
+    """
+    
+class PinBase(object): 
+    """
+    Base for the Pin class below to be used in type hinting.
+    """
+    
+class Register(object):
+    """
+    A configuration register on the MCP23017.
+
+    This class implements Python’s property protocol. 
+    
+    Setting triggers a write operation, getting a read operation.
+    """
+    def __init__(self, register_a:int):
+        """
+        Args:
+            register_a: The register’s number for the A bank.
+               B is that number +1.
+        """
+        self.register_a = register_a
+        
+    def __set_name__(self, owner:object, name:str):
+        self._name = name
+
+    def __get__(self, bank:BankBase, owner:object) -> Byte:
+        return Byte(bank.expander.read_byte_data(
+            self.register_a + bank.bank_no))
+
+    def __set__(self, bank:BankBase, value:Byte):    
+        bank.expander.write_byte_data(
+            self.register_a + bank.bank_no, value)
+
+class CachedRegister(Register):
+    """
+    This is meant for configuration registers. We assume exclusive
+    access to the chip. We cache configuration values written and
+    return them as current values if requested. If no value has been
+    written, yet, current values are read from the chip.
+    """
+    def __get__(self, bank:BankBase, owner:object) -> Byte:
+        ret = self.get_cache(bank)
+        if ret is None:
+            ret = super().__get__(bank, owner)
+            self.set_cache(bank, ret)
+        return Byte(ret)
+
+    def __set__(self, bank:BankBase, value:Byte):    
+        super().__set__(bank, value)
+        self.set_cache(bank, value)
+        
+    @property
+    def _cache_name(self):
+        return f"_{self._name}_cache"
+    
+    def get_cache(self, bank:BankBase):
+        return getattr(bank, self._cache_name, None)
+
+    def set_cache(self, bank:BankBase, value:int):
+        setattr(bank, self._cache_name, value)
+
+class ReadOnlyRegister(Register):
+    """
+    This is regular (non-cached) register we cannot write to. 
+    """
+    def __set__(self, bank:BankBase, owner:object) -> Byte:
+        raise IOError("Register is read-only.")
+        
+class Bank(BankBase):
+    """
+    In IOCON.BANK=0 mode MCP23017 has two banks of eight GPIOs each. 
+    """
+    def __init__(self, expander:Expander, bank_no:int):
+        """
+        Args:
+            expander: The IO Expander we belong to.
+            bank_no: 0 for bank A, 1 for bank B.
+        """
+        self._expander = expander
+        self._bank_no = bank_no
+
+    @property
+    def expander(self) -> Expander:
+        return self._expander
+
+    @property
+    def bank_no(self) -> int:
+        return self._bank_no
+        
+    def read(self) -> Byte:
+        """
+        Use the GPIOx register to read the bank. 
+        """
+        return self.gpios
+        
+    def write(self, value:Byte):
+        """
+        Write the byte pattern to the OLATx (output latch) register. 
+        """
+        self.output_latches = value
+
+    def __getitem__(self, idx:int):
+        """
+        Provide subscript syntax for the pins. The bank acts like
+        a tuple of eight Pin objects, see below. 
+        """
+        assert 0 <= idx < 8, IndexError
+        return Pin(self, idx)
+
+    # Properties. To configure a whole IO bank, set to a Byte value.
+
+    iodir_is_input: Byte = CachedRegister(IODIRA)
+    """\
+    3.5.1 I/O DIRECTION REGISTER (IODIRx `Register`)
+    
+    Controls the direction of the data I/O. When a bit is set, the
+    corresponding pin becomes an input. When a bit is clear, the
+    corresponding pin becomes an output.
+    """
+    
+    pin_polarity_is_reversed: Byte = CachedRegister(IPOLA)
+    """\
+    3.5.2 INPUT POLARITY REGISTER (IPOLx `Register`)
+    
+    This register allows the user to configure the polarity on the
+    corresponding GPIO port bits.
+    If a bit is set, the corresponding GPIO register bit will reflect the
+    inverted value on the pin. 
+    """
+
+    interrupt_on_change: Byte = CachedRegister(GPINTENA)
+    """\
+    3.5.3 INTERRUPT-ON-CHANGE CONTROL REGISTER (GPINTENx `Register`)
+    
+    The GPINTEN register controls the interrupt-on-change feature for each
+    pin.
+
+    If a bit is set, the corresponding pin is enabled for interrupt-on-change.
+    The DEFVAL and INTCON registers must also be configured if any pins are
+    enabled for interrupt-on-change.
+    """
+
+    default_comparison_values: Byte = CachedRegister(DEFVALA)
+    """\
+    3.5.4 DEFAULT COMPARE REGISTER FOR INTERRUPT-ON-CHANGE (DEFVALx `Register`)
+    
+    The default comparison value is configured in the DEFVAL register. If
+    enabled (via GPINTEN and INTCON) to compare against the DEFVAL register,
+    an opposite value on the associated pin will cause an interrupt to occur.
+    """
+
+    interrupt_compare_to_default: Byte = CachedRegister(INTCONA)
+    """\
+    3.5.5 INTERRUPT CONTROL REGISTER (INTCONx `Register`)
+    
+    The INTCON register controls how the associated pin value is compared
+    for the interrupt-on-change feature. If a bit is set, the corresponding
+    I/O pin is compared against the associated bit in the DEFVAL register.
+    If a bit value is clear, the corresponding I/O pin is compared against
+    the previous value.
+    """
+
+    # 3.5.6
+    # configuration = ConfigurationRegister()
+
+    internal_pull_up_is_active: Byte = CachedRegister(GPPUA)
+    """\
+    3.5.7 PULL-UP RESISTOR CONFIGURATION REGISTER (GPPUx `Register`)
+    
+    The GPPU register controls the pull-up resistors for the port pins.
+    If a bit is set and the corresponding pin is configured as an input,
+    the corresponding port pin is internally pulled up with a 100
+    kΩ resistor.
+    """
+    
+    interrupt_flags: Byte = ReadOnlyRegister(INTFA)
+    """\
+    3.5.8 INTERRUPT FLAG REGISTER (INTFx `Register`)
+    
+    The INTF register reflects the interrupt condition on the port pins of
+    any pin that is enabled for interrupts via the GPINTEN register. A set
+    bit indicates that the associated pin caused the interrupt.
+    
+    This register is read-only. Writes to this register will be ignored.
+    """
+
+    interrupt_captured: Byte = ReadOnlyRegister(INTCAPA)
+    """\
+    3.5.9 INTERRUPT CAPTURED REGISTER (INTCAPx `Register`)
+    
+    The INTCAP register captures the GPIO port value at the time the
+    interrupt occurred. The register is read-only and is updated only when
+    an interrupt occurs. The register remains unchanged until the interrupt
+    is cleared via a read of INTCAP or GPIO.
+    """
+
+    gpios: Byte = Register(GPIOA)
+    """\
+    3.5.10 PORT REGISTER (GPIOx `Register`)
+    
+    The GPIO register reflects the value on the port. Reading from this
+    register reads the port. Writing to this register modifies the Output
+    Latch (OLAT) register.
+    """
+
+    output_latches: Byte = CachedRegister(OLATA)
+    """\
+    3.5.11 OUTPUT LATCH REGISTER (OLATx `Register`)
+    
+    The OLAT register provides access to the output latches. A read from
+    this register results in a read of the OLAT and not the port itself.
+    A write to this register modifies the output latches that modifies the
+    pins configured as outputs.
+    """
+
+class PinConfig(object):
+    """
+    A bit of a configuration register.
+
+    This class implements Python’s property protocol. 
+    
+    Each change will trigger a (cached) read from the register and a
+    write. To change multiple bits in a register use the registers
+    directly.
+    """
+    def __set_name__(self, pin:PinBase, name:str):
+        """
+        The name of the Pin’s boolean property must correspond to the
+        (Cached or ReadOnly) Register in the Bank class. This is hard coded
+        here. The Bank class may use plural.
+
+        BTW: This is not an efficiancy issue. This constructor is called at
+        import time.
+
+        Raises:
+           NameError: If the Bank class does not contain a corresponding
+               register.
+        """
+        for n in (name, name + "s", name + "es",):
+            if n in Bank.__dict__:
+                self.register = Bank.__dict__[n]
+                break
+        else:
+            raise NameError(repr(name))
+
+    def __get__(self, pin:PinBase, owner:object) -> bool:
+        return bool(self.register.__get__(pin.bank, pin) & pin.mask)
+
+    def __set__(self, pin:PinBase, value:bool):
+        old = self.register.__get__(pin.bank, pin)
+        self.register.__set__(pin.bank, old.set_bit_to(pin.no, value))
+
+class ReadOnlyPinConfig(object):
+    def __set__(self, pin:PinBase, value:Byte):
+        raise IOError("Register is read only (trying to modify pin config.")
+        
+class Pin(PinBase):
+    """
+    Model one GPIO pin. Each change to any of the configuration
+    parameters will cause bank configuration registers to be written.
+    Changes to multiple paramters are performed more efficiently by changing
+    bank registers. 
+    """
+    def __init__(self, bank:Bank, no:int):
+        self._bank = bank
+        self._no = no
+        self._mask = (0x1 << no)
+
+    @property
+    def bank(self) -> Bank:
+        return self._bank
+
+    @property
+    def no(self) -> int:
+        return self._no
+    
+    @property
+    def mask(self) -> int:
+        return self._mask
+
+    def read(self) -> bool:
+        return bool(self._bank.gpios & self._mask)
+
+    def write(self, value:bool|int):
+        self._bank.gpios = self._bank.gpios.set_bit_to(
+            self._no, bool(value))
+
+    iodir_is_input:bool = PinConfig()
+    "IODIRx `Register` bit for this pin"
+    
+    pin_polarity_is_reversed:bool = PinConfig()
+    "IPOLx `Register` bit for this pin"
+    
+    interrupt_on_change:bool = PinConfig()
+    "GPINTENx `Register` bit for this pin"
+    
+    default_comparison_value:bool = PinConfig()
+    "DEFVALx `Register` bit for this pin"
+    
+    interrupt_compare_to_default:bool = PinConfig()
+    "INTCONx `Register` bit for this pin"
+    
+    internal_pull_up_is_active:bool = PinConfig()
+    "GPPUx `Register` bit for this pin"
+    
+    interrupt_flag:bool = ReadOnlyPinConfig()
+    "INTFx `Register` bit for this pin"
+    
+    interrupt_captured:bool = ReadOnlyPinConfig()
+    "INTCAPx `Register` bit for this pin"
+    
+    output_latch:bool = PinConfig()
+    "OLATx `Register` bit for this pin"
+
