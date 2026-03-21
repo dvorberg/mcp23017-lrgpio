@@ -1,3 +1,9 @@
+*~
+site-packages
+virtualenv
+.virtualenv.trainpi
+.virtualenv.leela
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
