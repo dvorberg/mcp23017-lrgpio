@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
 """
-Access a MCP23017 “IO Expander” through the i2c wrapper provided by
-rgpio or lgpio.
+Access a MCP23017 “IO Expander” through the i2c wrapper provided
+by [rgpio](http://abyz.me.uk/lg/py_lgpio.html) or
+[lgpio](http://abyz.me.uk/lg/py_rgpio.html).
 
 This is a learning project of mine to understand I2C programming
 better, and an API design exercise. I plan to use this in “production”
 on my model railway, but I will only test it is as far as I use
-it. Your milage may vary. Patches welcome. 
+it. Your milage may vary. Patches welcome.
 
-The MCP23017 “GPIO Expander” is interfaced in IOCON.BANK = 0
+The MCP23017 “GPIO Expander” is interfaced in IOCON.BANK = 0
 mode. This mode allows read and write operations to single byte
 registers to access two banks (A and B) of eight GPIOs each.
 
@@ -28,26 +29,28 @@ registers to access two banks (A and B) of eight GPIOs each.
   is quoted extensively below. 
 * The `Pin` class represents a pin on a bank and allows read() and write()
   as one might expect. The class also provides access to the Pin’s Bank’s
-  configuration registers. All vales will go through the `Register`s on the
+  configuration registers. All values will go through the `Register`s on the
   corresponding `Bank` and will trigger i2c read and/or write operations,
   if needed. 
 * The `Byte` class subclasses int and provides helper functions to read
   and manipulate single bits. You will interact with registers on the banks
   almost exclusively through this class. Everything should be
   self-explainatory, though.
-• The (`Cached`-, `ReadOnly`-) `Register` classes and the (`ReadOnly`-)
+* The (`Cached`-, `ReadOnly`-) `Register` classes and the (`ReadOnly`-)
   `PinConfig` classes implement Python’s property protocol to facilitate
   access to the device’s configuration and data. It is in the `Register`
   class that the only calls to i2c IO functions are actually made. There
-  are exactly to lines in this program where this happens, one for reading
+  are exactly two lines in this program where this happens, one for reading
   (in `__get__()`) and one for writing (in `__set__()`). 
 
-The MCP23017 datasheet and documentation is quoted extensively below,
-explaing the configuration registers. For the somewhat complex dependencies
-between the registers governing interrupt operation, I refer you to that
-document. The registers to controll the internal pull-up resistors and
-logical pin reversal are easily understood. In many contexts in which I
-use the device, this saves me resistors and their soldering. Nice! 
+The [MCP23017
+datasheet](https://ww1.microchip.com/downloads/en/devicedoc/20001952c.pdf)
+is quoted extensively below, explaing the configuration registers. For
+the somewhat complex dependencies between the registers governing
+interrupt operation, I refer you to that document. The registers to
+controll the internal pull-up resistors and logical pin reversal are
+easily understood. In many contexts in which I use the device, this
+saves me resistors and soldering. Nice!
 """
 
 from typing import Tuple
@@ -87,7 +90,7 @@ lgpio module or a wrapper thereof.
 class Byte(int):
     """
     A byte is an integer that stores a pattern of 8 bits. It may be
-    initialized by a ByteSpec which may be either:
+    initialized with a ByteSpec which may be either:
     * an 8-tuple of bools,
     * a regular integer
     * or a bool.
