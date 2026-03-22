@@ -17,9 +17,12 @@ registers to access two banks (A and B) of eight GPIOs each.
 ### Overview
 
 * The `Expander` class provides connectivity and access to the Expander’s
-  banks of eight GPIOs each, `bank_a` and `bank_b`.
+  banks of eight GPIOs each, `bank_a` and `bank_b`. The `Expander` class
+  provides several boolean configuration parameters that are written to
+  the IOCON register, the most relevant of which are `mirror_interrupts`
+  and `interrupt_polarity`. 
 * The `Bank` class procides access to the bank’s configuration registers
-  through properties (`iodir_is_input`, `pin_polarity_is_reversed`,
+  through properties (`iodir_is_input`, `input_polarity_is_reversed`,
   `interrupt_on_change`, `default_comparison_values`,
   `interrupt_compare_to_default`, `internal_pull_up_is_active`,
   `interrupt_flags`, `interrupt_captured`, `gpios`, `output_latches`) and
@@ -53,7 +56,7 @@ easily understood. In many contexts in which I use the device, this
 saves me resistors and soldering. Nice!
 """
 
-from typing import Tuple
+from typing import Tuple, Self
 
 # TABLE 3-5: CONTROL REGISTER SUMMARY (IOCON.BANK = 0)
 # The “B” version of each bank register is the A-number + 1.
@@ -68,7 +71,6 @@ INTFA    = 0x0E
 INTCAPA  = 0x10
 GPIOA    = 0x12
 OLATA    = 0x14
-        
 
 # A BoolByte 
 type BoolByte = Tuple[bool, bool, bool, bool, bool, bool, bool, bool]
@@ -109,13 +111,15 @@ class Byte(int):
             for bit, a in enumerate(b[:8]):
                 if a:
                     i = i | (0x01 << bit)
-        elif isinstance(b, int): # isinstance() takes inheritance into account.
-            i = b & 0xff
         elif type(b) is bool:
+            # This must happen first, because any bool is an instance
+            # of int.
             if b:
                 i = 0xff
             else:
                 i = 0x00
+        elif isinstance(b, int): # isinstance() takes inheritance into account.
+            i = b & 0xff
         else:
             raise TypeError("Can’t construct Byte from " + repr(b))
                 
@@ -125,27 +129,25 @@ class Byte(int):
         """
         Yield the bit-pattern as eight bools.
         """
-        if hasattr(self, "_tuple"):
-            yield from iter(self._tuple)
-        else:
-            for a in range(8):
-                yield bool(self & (0x1 << a))
+        for a in range(8):
+            yield self[a]
 
+    def __len__(self) -> int:
+        return 8
+            
     def __getitem__(self, idx) -> bool:
         """
         Access the bits as if this were an eight-tuple of bools. 
         """
-        if not hasattr(self, "_tuple"):
-            self._tuple = tuple(self)
-        return self._tuple[idx]
-
+        return bool(self & (0x1 << idx))
+    
     def __repr__(self) -> str:
         """
         A Byte is represented as a Python binary literal with leading 0s. 
         """
         return "0b" + "{:08b}".format(self)
 
-    def set_bit_to(self, bit:int, value:bool):
+    def set_bit_to(self, bit:int, value:bool) -> Self:
         """
         Return a copy of self with the specified `bit` set to `value`. 
         """
@@ -158,15 +160,15 @@ class Byte(int):
             
         return Byte(new)
 
-    def set_bit(self, bit:int):
+    def set_bit(self, bit:int) -> Self:
         """
         Return a copy of self with the specified `bit` set.
         """
         return self.set_bit_to(bit, True)
         
-    def delete_bit(self, bit:int):
+    def clear_bit(self, bit:int) -> Self:
         """
-        Return a copy of self with the specified `bit` deleted.
+        Return a copy of self with the specified `bit` cleared.
         """
         return self.set_bit_to(bit, False)
 
@@ -175,6 +177,38 @@ class Byte(int):
         Get the state of a single bit.
         """
         return bool(self & (0x01 << bit))
+
+class ExpanderBase(object):
+    # Base for the Expander class below to be used in type hinting.
+    pass
+
+class BankBase(object):
+    # Base for the Bank class below to be used in type hinting.
+    pass
+    
+class PinBase(object): 
+    # Base for the Pin class below to be used in type hinting.
+    pass
+    
+class ConfigurationBit(object):
+    """
+    The MCP23017’s IOCON register allows for configuration of the
+    device through seven bit settings. This class implements Python’s
+    property protocol to make these available as boolean properties of
+    the `Expander` class. They are accessed through the `configuration`
+    `Register' of the expander’s `bank_a`. Since the IOCON register is
+    shared between the banks, this doesn’s make any difference
+    (cf. the datasheet under 3.5).
+    """
+    def __init__(self, bitno:int):
+        self._bitno = bitno
+
+    def __set__(self, expander:ExpanderBase, value:bool):
+        old = expander.bank_a.configuration
+        expander.bank_a.configuration = old.set_bit_to(self._bitno, value)
+
+    def __get__(self, expander:ExpanderBase, owner:object) -> bool:
+        return expander.bank_a.configuration[self._bitno]
         
 class Expander(object):
     """
@@ -200,21 +234,108 @@ class Expander(object):
         self._sbc.i2c_close(self._handle)
 
     def write_byte_data(self, register:int, value:int):
-        self.sbc.i2c_write_byte_data(self._handle, register, value)
+        self._sbc.i2c_write_byte_data(self._handle, register, value)
 
     def read_byte_data(self, register:int) -> int:
-        return self.sbc.i2c_read_byte_data(self._handle, register)
+        return self._sbc.i2c_read_byte_data(self._handle, register)
 
-class BankBase(object):
-    """
-    Base for the Bank class below to be used in type hinting.
+    # 3.5.6 CONFIGURATION REGISTER
+    bank:bool = ConfigurationBit(7)
+    """\
+    The BANK bit changes how the registers are mapped
+    (see Tables 3-4 and3-5 for more details).
+
+    Controls how the registers are addressed<br>
+    1 = The registers associated with each port are separated into
+        different banks.<br>
+    0 = The registers are in the same bank (addresses are sequential).
+    
+    **You don’t want to use this. This class assumes BANK=0.**
     """
     
-class PinBase(object): 
+    mirror_interrupts:bool = ConfigurationBit(6)
+    """\
+    The MIRROR bit controls how the INTA and INTB pins
+    function with respect to each other.
+    * When MIRROR = 1, the INTn pins are functionally
+      OR’ed so that an interrupt on either port will cause
+      both pins to activate.
+    * When MIRROR = 0, the INT pins are separated.
+      Interrupt conditions on a port will cause its
+      respective INT pin to activate.
+
+    INT Pins Mirror bit<br>
+    1 = The INT pins are internally connected<br>
+    0 = The INT pins are not connected. INTA is associated with PORTA
+      and INTB is associated with PORTB.
     """
-    Base for the Pin class below to be used in type hinting.
+
+    sequential_operation:bool = ConfigurationBit(5)
+    """\
+    The Sequential Operation (SEQOP) controls the incrementing
+    function of the Address Pointer. If the address pointer is
+    disabled, the Address Pointer does not automatically increment
+    after each byte is clocked during a serial transfer. This feature
+    is useful when it is desired to continuously poll (read) or modify
+    (write) a register.
+
+    Sequential Operation mode bit<br>
+    1 = Sequential operation disabled, address pointer does not increment.<br>
+    0 = Sequential operation enabled, address pointer increments.
     """
+
+    slew_rate:bool = ConfigurationBit(4)
+    """
+    The Slew Rate (DISSLW) bit controls the slew rate
+    function on the SDA pin. If enabled, the SDA slew rate
+    will be controlled when driving from a high to low.
+
+     Slew Rate control bit for SDA output<br>
+    1 = Slew rate disabled<br>
+    0 = Slew rate enabled
+    """
+
+    enable_hardware_address:bool = ConfigurationBit(3)
+    """
+    The Hardware Address Enable (HAEN) bit
+    enables/disables hardware addressing on the
+    MCP23S17 only. The address pins (A2, A1 and A0)
+    must be externally biased, regardless of the HAEN bit
+    value.
     
+    If enabled (HAEN = 1), the device’s hardware address
+    matches the address pins.
+    
+    If disabled (HAEN = 0), the device’s hardware address
+    is A2 = A1 = A0 = 0.
+
+    HAEN: Hardware Address Enable bit (MCP23S17 only) (Note 1)<br>
+    1 = Enables the MCP23S17 address pins.<br>
+    0 = Disables the MCP23S17 address pins.
+    """
+
+    interrupt_is_open_drain:bool = ConfigurationBit(2)
+    """
+    The Open-Drain (ODR) control bit enables/disables the
+    INT pin for open-drain configuration. Setting this bit
+    overrides the INTPOL bit.
+
+    Configures the INT pin as an open-drain output<br>
+    1 = Open-drain output (overrides the INTPOL bit.)<br>
+    0 = Active driver output (INTPOL bit sets the polarity.)
+    """
+
+    interrupt_polarity:bool = ConfigurationBit(1)
+    """
+    The Interrupt Polarity (INTPOL) sets the polarity of the
+    INT pin. This bit is functional only when the ODR bit is
+    cleared, configuring the INT pin as active push-pull.
+
+     This bit sets the polarity of the INT output pin<br>
+     1 = Active-high<br>
+     0 = Active-lo
+     """
+
 class Register(object):
     """
     A configuration register on the MCP23017.
@@ -238,9 +359,11 @@ class Register(object):
         return Byte(bank.expander.read_byte_data(
             self.register_a + bank.bank_no))
 
-    def __set__(self, bank:BankBase, value:Byte):    
+    def __set__(self, bank:BankBase, value:ByteSpec):
+        value = Byte(value)
         bank.expander.write_byte_data(
             self.register_a + bank.bank_no, value)
+        return value
 
 class CachedRegister(Register):
     """
@@ -256,8 +379,8 @@ class CachedRegister(Register):
             self.set_cache(bank, ret)
         return Byte(ret)
 
-    def __set__(self, bank:BankBase, value:Byte):    
-        super().__set__(bank, value)
+    def __set__(self, bank:BankBase, value:ByteSpec):
+        value = super().__set__(bank, value)
         self.set_cache(bank, value)
         
     @property
@@ -329,7 +452,7 @@ class Bank(BankBase):
     corresponding pin becomes an output.
     """
     
-    pin_polarity_is_reversed: Byte = CachedRegister(IPOLA)
+    input_polarity_is_reversed: Byte = CachedRegister(IPOLA)
     """\
     3.5.2 INPUT POLARITY REGISTER (IPOLx `Register`)
     
@@ -371,9 +494,17 @@ class Bank(BankBase):
     the previous value.
     """
 
-    # 3.5.6
-    # configuration = ConfigurationRegister()
+    configuration = CachedRegister(IOCONA)
+    """\
+    3.5.6 CONFIGURATION REGISTER (IOCON `ConfigurationRegister`)
 
+    This register is shared between the two ports (banks), cf. to the
+    datasheet under 3.5.
+
+    It is set by the `ConfigurationBit` properties of the `Expander`
+    cass. 
+    """
+    
     internal_pull_up_is_active: Byte = CachedRegister(GPPUA)
     """\
     3.5.7 PULL-UP RESISTOR CONFIGURATION REGISTER (GPPUx `Register`)
@@ -499,7 +630,7 @@ class Pin(PinBase):
     iodir_is_input:bool = PinConfig()
     "IODIRx `Register` bit for this pin"
     
-    pin_polarity_is_reversed:bool = PinConfig()
+    input_polarity_is_reversed:bool = PinConfig()
     "IPOLx `Register` bit for this pin"
     
     interrupt_on_change:bool = PinConfig()
