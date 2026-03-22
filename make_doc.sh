@@ -8,6 +8,8 @@ fi
 
 rm -f doc/*
 
+. .virtualenv.$(hostname -s)/bin/activate 
+
 PYTHONPATH=. pdoc -n -o doc/ -d google \
              --no-include-undocumented \
              --no-search \
