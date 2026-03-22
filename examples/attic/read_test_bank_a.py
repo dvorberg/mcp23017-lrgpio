@@ -1,6 +1,8 @@
 import time
 import lgpio as sbc
 
+import icecream; icecream.install()
+
 from mcp23017 import Expander
 
 expander = Expander(sbc, 1, 0x20)
