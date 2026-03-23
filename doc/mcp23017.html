@@ -238,10 +238,10 @@ through properties (<code>iodir_is_input</code>, <code>input_polarity_is_reverse
 <code>interrupt_flags</code>, <code>interrupt_captured</code>, <code>gpios</code>, <code>output_latches</code>) and
 also <code>read()</code> and <code>write()</code> methods that set and get GPIO bin status
 as one would expect. A <code><a href="#Bank">Bank</a></code> acts like an eight-tuple of <code><a href="#Pin">Pin</a></code>s. The
-register properties correspond to the acrual registers. The datasheet
-is quoted extensively below. </li>
+register properties correspond to the actual registers. The datasheet
+is quoted extensively below to document them. </li>
 <li>The <code><a href="#Pin">Pin</a></code> class represents a pin on a bank and allows read() and write()
-as one might expect. The class also provides access to the Pin’s Bank’s
+as one might expect. The class also provides access to the Pin’s Bank
 configuration registers. All values will go through the <code><a href="#Register">Register</a></code>s on the
 corresponding <code><a href="#Bank">Bank</a></code> and will trigger i2c read and/or write operations,
 if needed. </li>
@@ -301,10 +301,10 @@ saves me resistors and soldering. Nice!</p>
 </span><span id="L-28"><a href="#L-28"><span class="linenos"> 28</span></a><span class="sd">  `interrupt_flags`, `interrupt_captured`, `gpios`, `output_latches`) and</span>
 </span><span id="L-29"><a href="#L-29"><span class="linenos"> 29</span></a><span class="sd">  also `read()` and `write()` methods that set and get GPIO bin status</span>
 </span><span id="L-30"><a href="#L-30"><span class="linenos"> 30</span></a><span class="sd">  as one would expect. A `Bank` acts like an eight-tuple of `Pin`s. The</span>
-</span><span id="L-31"><a href="#L-31"><span class="linenos"> 31</span></a><span class="sd">  register properties correspond to the acrual registers. The datasheet</span>
-</span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a><span class="sd">  is quoted extensively below. </span>
+</span><span id="L-31"><a href="#L-31"><span class="linenos"> 31</span></a><span class="sd">  register properties correspond to the actual registers. The datasheet</span>
+</span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a><span class="sd">  is quoted extensively below to document them. </span>
 </span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a><span class="sd">* The `Pin` class represents a pin on a bank and allows read() and write()</span>
-</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="sd">  as one might expect. The class also provides access to the Pin’s Bank’s</span>
+</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="sd">  as one might expect. The class also provides access to the Pin’s Bank</span>
 </span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a><span class="sd">  configuration registers. All values will go through the `Register`s on the</span>
 </span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a><span class="sd">  corresponding `Bank` and will trigger i2c read and/or write operations,</span>
 </span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a><span class="sd">  if needed. </span>
@@ -373,7 +373,7 @@ saves me resistors and soldering. Nice!</p>
 </span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a><span class="sd">    For all other input values, a TypeError will be raised. </span>
 </span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a>
 </span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a><span class="sd">    A Byte is iterable and will yield eigth boolean values.&lt;br&gt;</span>
-</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a><span class="sd">    A Byte has allows indexed access like an 8-tuple of bools.</span>
+</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a><span class="sd">    A Byte allows indexed access like an 8-tuple of bools.</span>
 </span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a>
 </span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a><span class="sd">    The string representation of a Byte is a binary integer literal:</span>
 </span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a><span class="sd">    repr(b) = str(b) = &quot;0b01010101&quot;.</span>
@@ -469,7 +469,7 @@ saves me resistors and soldering. Nice!</p>
 </span><span id="L-196"><a href="#L-196"><span class="linenos">196</span></a><span class="sd">    device through seven bit settings. This class implements Python’s</span>
 </span><span id="L-197"><a href="#L-197"><span class="linenos">197</span></a><span class="sd">    property protocol to make these available as boolean properties of</span>
 </span><span id="L-198"><a href="#L-198"><span class="linenos">198</span></a><span class="sd">    the `Expander` class. They are accessed through the `configuration`</span>
-</span><span id="L-199"><a href="#L-199"><span class="linenos">199</span></a><span class="sd">    `Register&#39; of the expander’s `bank_a`. Since the IOCON register is</span>
+</span><span id="L-199"><a href="#L-199"><span class="linenos">199</span></a><span class="sd">    `Register` of the expander’s `bank_a`. Since the IOCON register is</span>
 </span><span id="L-200"><a href="#L-200"><span class="linenos">200</span></a><span class="sd">    shared between the banks, this doesn’s make any difference</span>
 </span><span id="L-201"><a href="#L-201"><span class="linenos">201</span></a><span class="sd">    (cf. the datasheet under 3.5).</span>
 </span><span id="L-202"><a href="#L-202"><span class="linenos">202</span></a><span class="sd">    &quot;&quot;&quot;</span>
@@ -1001,7 +1001,7 @@ lgpio module or a wrapper thereof.</p>
 </span><span id="Byte-101"><a href="#Byte-101"><span class="linenos">101</span></a><span class="sd">    For all other input values, a TypeError will be raised. </span>
 </span><span id="Byte-102"><a href="#Byte-102"><span class="linenos">102</span></a>
 </span><span id="Byte-103"><a href="#Byte-103"><span class="linenos">103</span></a><span class="sd">    A Byte is iterable and will yield eigth boolean values.&lt;br&gt;</span>
-</span><span id="Byte-104"><a href="#Byte-104"><span class="linenos">104</span></a><span class="sd">    A Byte has allows indexed access like an 8-tuple of bools.</span>
+</span><span id="Byte-104"><a href="#Byte-104"><span class="linenos">104</span></a><span class="sd">    A Byte allows indexed access like an 8-tuple of bools.</span>
 </span><span id="Byte-105"><a href="#Byte-105"><span class="linenos">105</span></a>
 </span><span id="Byte-106"><a href="#Byte-106"><span class="linenos">106</span></a><span class="sd">    The string representation of a Byte is a binary integer literal:</span>
 </span><span id="Byte-107"><a href="#Byte-107"><span class="linenos">107</span></a><span class="sd">    repr(b) = str(b) = &quot;0b01010101&quot;.</span>
@@ -1093,7 +1093,7 @@ For all other input values, a TypeError will be raised. </li>
 </ul>
 
 <p>A Byte is iterable and will yield eigth boolean values.<br>
-A Byte has allows indexed access like an 8-tuple of bools.</p>
+A Byte allows indexed access like an 8-tuple of bools.</p>
 
 <p>The string representation of a Byte is a binary integer literal:
 repr(b) = str(b) = "0b01010101".</p>
@@ -1221,7 +1221,7 @@ repr(b) = str(b) = "0b01010101".</p>
 </span><span id="ConfigurationBit-197"><a href="#ConfigurationBit-197"><span class="linenos">197</span></a><span class="sd">    device through seven bit settings. This class implements Python’s</span>
 </span><span id="ConfigurationBit-198"><a href="#ConfigurationBit-198"><span class="linenos">198</span></a><span class="sd">    property protocol to make these available as boolean properties of</span>
 </span><span id="ConfigurationBit-199"><a href="#ConfigurationBit-199"><span class="linenos">199</span></a><span class="sd">    the `Expander` class. They are accessed through the `configuration`</span>
-</span><span id="ConfigurationBit-200"><a href="#ConfigurationBit-200"><span class="linenos">200</span></a><span class="sd">    `Register&#39; of the expander’s `bank_a`. Since the IOCON register is</span>
+</span><span id="ConfigurationBit-200"><a href="#ConfigurationBit-200"><span class="linenos">200</span></a><span class="sd">    `Register` of the expander’s `bank_a`. Since the IOCON register is</span>
 </span><span id="ConfigurationBit-201"><a href="#ConfigurationBit-201"><span class="linenos">201</span></a><span class="sd">    shared between the banks, this doesn’s make any difference</span>
 </span><span id="ConfigurationBit-202"><a href="#ConfigurationBit-202"><span class="linenos">202</span></a><span class="sd">    (cf. the datasheet under 3.5).</span>
 </span><span id="ConfigurationBit-203"><a href="#ConfigurationBit-203"><span class="linenos">203</span></a><span class="sd">    &quot;&quot;&quot;</span>
@@ -1241,7 +1241,7 @@ repr(b) = str(b) = "0b01010101".</p>
 device through seven bit settings. This class implements Python’s
 property protocol to make these available as boolean properties of
 the <code><a href="#Expander">Expander</a></code> class. They are accessed through the <code>configuration</code>
-<code>Register' of the expander’s</code>bank_a`. Since the IOCON register is
+<code><a href="#Register">Register</a></code> of the expander’s <code>bank_a</code>. Since the IOCON register is
 shared between the banks, this doesn’s make any difference
 (cf. the datasheet under 3.5).</p>
 </div>

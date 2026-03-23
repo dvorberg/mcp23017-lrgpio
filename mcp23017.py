@@ -28,10 +28,10 @@ registers to access two banks (A and B) of eight GPIOs each.
   `interrupt_flags`, `interrupt_captured`, `gpios`, `output_latches`) and
   also `read()` and `write()` methods that set and get GPIO bin status
   as one would expect. A `Bank` acts like an eight-tuple of `Pin`s. The
-  register properties correspond to the acrual registers. The datasheet
-  is quoted extensively below. 
+  register properties correspond to the actual registers. The datasheet
+  is quoted extensively below to document them. 
 * The `Pin` class represents a pin on a bank and allows read() and write()
-  as one might expect. The class also provides access to the Pin’s Bank’s
+  as one might expect. The class also provides access to the Pin’s Bank
   configuration registers. All values will go through the `Register`s on the
   corresponding `Bank` and will trigger i2c read and/or write operations,
   if needed. 
@@ -100,7 +100,7 @@ class Byte(int):
     For all other input values, a TypeError will be raised. 
 
     A Byte is iterable and will yield eigth boolean values.<br>
-    A Byte has allows indexed access like an 8-tuple of bools.
+    A Byte allows indexed access like an 8-tuple of bools.
 
     The string representation of a Byte is a binary integer literal:
     repr(b) = str(b) = "0b01010101".
@@ -196,7 +196,7 @@ class ConfigurationBit(object):
     device through seven bit settings. This class implements Python’s
     property protocol to make these available as boolean properties of
     the `Expander` class. They are accessed through the `configuration`
-    `Register' of the expander’s `bank_a`. Since the IOCON register is
+    `Register` of the expander’s `bank_a`. Since the IOCON register is
     shared between the banks, this doesn’s make any difference
     (cf. the datasheet under 3.5).
     """
