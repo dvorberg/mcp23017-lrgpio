@@ -1,50 +1,45 @@
 #!/usr/bin/env python3
 
 """
-Access a MCP23017 “IO Expander” through the i2c wrapper provided
-by [rgpio](http://abyz.me.uk/lg/py_lgpio.html) or
-[lgpio](http://abyz.me.uk/lg/py_rgpio.html).
-
-This is a learning project of mine to understand I2C programming
-better, and an API design exercise. I plan to use this in “production”
-on my model railway, but I will only test it is as far as I use
-it. Your milage may vary. Patches welcome.
-
-The MCP23017 “GPIO Expander” is interfaced in IOCON.BANK = 0
-mode. This mode allows read and write operations to single byte
-registers to access two banks (A and B) of eight GPIOs each.
-
 ### Overview
+This is the only class you should need to instantiate in most use cases:
+* The `Expander` class provides connectivity and access to the
+  Expander’s banks of eight GPIOs each, `bank_a` and `bank_b`. The
+  `Expander` class   provides several boolean configuration
+  parameters that are written to the IOCON register, the most relevant of
+  which are `mirror_interrupts` and `interrupt_polarity`.
 
-* The `Expander` class provides connectivity and access to the Expander’s
-  banks of eight GPIOs each, `bank_a` and `bank_b`. The `Expander` class
-  provides several boolean configuration parameters that are written to
-  the IOCON register, the most relevant of which are `mirror_interrupts`
-  and `interrupt_polarity`. 
-* The `Bank` class procides access to the bank’s configuration registers
-  through properties (`iodir_is_input`, `input_polarity_is_reversed`,
+These classes are provided for type inting since one might pass these around
+in oneʼs code:
+* The `Bank` class procides access to the bank’s configuration
+  registers through properties (`iodir_is_input`, `input_polarity_is_reversed`,
   `interrupt_on_change`, `default_comparison_values`,
   `interrupt_compare_to_default`, `internal_pull_up_is_active`,
   `interrupt_flags`, `interrupt_captured`, `gpios`, `output_latches`) and
   also `read()` and `write()` methods that set and get GPIO bin status
-  as one would expect. A `Bank` acts like an eight-tuple of `Pin`s. The
-  register properties correspond to the actual registers. The datasheet
-  is quoted extensively below to document them. 
-* The `Pin` class represents a pin on a bank and allows read() and write()
-  as one might expect. The class also provides access to the Pin’s Bank
-  configuration registers. All values will go through the `Register`s on the
-  corresponding `Bank` and will trigger i2c read and/or write operations,
-  if needed. 
-* The `Byte` class subclasses int and provides helper functions to read
+  as one would expect. A `Bank` acts like an eight-tuple
+  of `Pin`s. The register properties correspond to the actual
+  registers. The datasheet is quoted extensively below to document them. 
+* The `Pin` class represents a pin on a bank and allows read()
+  and write() as one might expect. The class also provides access to the
+  Pin’s Bank configuration registers. All values will go through the
+  `Register`s on the corresponding `Bank` and will trigger i2c
+  read and/or write operations, if needed.
+
+These are internal classes:
+* The (`Cached`-, `ReadOnly`-) `Register` classes and the (`ReadOnly`-)
+  `PinConfig` classes implement Python’s property protocol to
+  facilitate access to the device’s configuration and data. It is in
+  the `Register` class that the only calls to i2c IO functions are
+  actually made. There are exactly two lines in this program where
+  this happens, one for reading (in `__get__()`) and one for writing
+  (in `__set__()`).
+
+This might be interesting to look at:
+* The `i2cutils.Byte` class subclasses int and provides helper functions to read
   and manipulate single bits. You will interact with registers on the banks
   almost exclusively through this class. Everything should be
   self-explainatory, though.
-* The (`Cached`-, `ReadOnly`-) `Register` classes and the (`ReadOnly`-)
-  `PinConfig` classes implement Python’s property protocol to facilitate
-  access to the device’s configuration and data. It is in the `Register`
-  class that the only calls to i2c IO functions are actually made. There
-  are exactly two lines in this program where this happens, one for reading
-  (in `__get__()`) and one for writing (in `__set__()`). 
 
 The [MCP23017
 datasheet](https://ww1.microchip.com/downloads/en/devicedoc/20001952c.pdf)
@@ -78,12 +73,13 @@ OLATA    = 0x14
 class ConfigurationBit(object):
     """
     The MCP23017’s IOCON register allows for configuration of the
-    device through seven bit settings. This class implements Python’s
-    property protocol to make these available as boolean properties of
-    the `Expander` class. They are accessed through the `configuration`
-    `Register` of the expander’s `bank_a`. Since the IOCON register is
-    shared between the banks, this doesn’s make any difference
-    (cf. the datasheet under 3.5).
+    device through seven bit settings.
+
+    This class implements Python’s property protocol to make these
+    available as boolean properties of the `Expander` class. They are
+    accessed through the `configuration` `Register` of the expander’s
+    `bank_a`. Since the IOCON register is shared between the banks,
+    this doesn’s make any difference (cf. the datasheet under 3.5).
     """
     def __init__(self, bitno:int):
         self._bitno = bitno
@@ -95,7 +91,7 @@ class ConfigurationBit(object):
     def __get__(self, expander:Expander, owner:object) -> bool:
         return expander.bank_a.configuration[self._bitno]
         
-class Expander(Expander):
+class Expander(Device, Expander):
     """
     A MCP23017 in IOCON.BANK = 0 mode. This mode allows read and write
     operations to single byte registers to access two banks (A and B)
@@ -157,6 +153,8 @@ class Expander(Expander):
     Sequential Operation mode bit<br>
     1 = Sequential operation disabled, address pointer does not increment.<br>
     0 = Sequential operation enabled, address pointer increments.
+
+    *This feature is not actually supported by this module.*
     """
 
     slew_rate:bool = ConfigurationBit(4)
@@ -213,11 +211,9 @@ class Expander(Expander):
 
 class Register(object):
     """
-    A configuration register on the MCP23017.
-
-    This class implements Python’s property protocol. 
-    
-    Setting triggers a write operation, getting a read operation.
+    A configuration register on the MCP23017. This class
+    implements Python’s property protocol. Setting triggers a write
+    operation, getting a read operation.
     """
     def __init__(self, register_a:int):
         """
@@ -434,11 +430,9 @@ class PinConfig(object):
     """
     A bit of a configuration register.
 
-    This class implements Python’s property protocol. 
-    
-    Each change will trigger a (cached) read from the register and a
-    write. To change multiple bits in a register use the registers
-    directly.
+    This class implements Python’s property protocol. Each change
+    will trigger a (cached) read from the register and a write. To
+    change multiple bits in a register use the registers directly.
     """
     def __set_name__(self, pin:Pin, name:str):
         """
