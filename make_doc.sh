@@ -13,4 +13,4 @@ rm -R -f doc/*
 PYTHONPATH=. pdoc -n -o doc/ -d google \
              --no-include-undocumented \
              --no-search \
-             mcp23017.mcp23017
+             mcp23017
