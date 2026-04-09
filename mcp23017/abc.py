@@ -1,6 +1,8 @@
 # These stub classes provide forward declarations. 
 
-class Expander(object):
+from i2cutils.device import Device
+
+class Expander(Device):
     pass
 
 class Bank(object):
