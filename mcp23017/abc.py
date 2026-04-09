@@ -1,13 +1,20 @@
-# These stub classes provide forward declarations. 
+"""
+These stub classes provide forward declarations. 
+"""
 
-from i2cutils.device import Device
-
-class Expander(Device):
-    pass
+class Expander(object):
+    """
+    Base of the Expander class.
+    """
 
 class Bank(object):
-    pass
+    """
+    Base of the Bank class.
+    """
+
 
 class Pin(object):
-    pass
+    """
+    Base of the Pin class.
+    """
 
