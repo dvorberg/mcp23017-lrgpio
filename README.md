@@ -11,6 +11,10 @@ only test it is as far as I use it. Your milage may vary.
 * [MCP23017 datasheet](https://ww1.microchip.com/downloads/en/devicedoc/20001952c.pdf)
 * A hopefully growing number of examples in `examples/`. 
 
+This project depends on [rgpio](http://abyz.me.uk/lg/py_lgpio.html) or
+[lgpio](http://abyz.me.uk/lg/py_rgpio.html) and my
+[i2cutils-lrgpio](https://github.com/dvorberg/i2cutils-lrgpio) module.
+
 ```python
 # I hooked up the MCP23017 to my Raspberry Pi and I have four
 # switches connecting four lower number pins of the A bank to GND. 
